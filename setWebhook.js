@@ -1,20 +1,20 @@
+// setWebhook.js
 import dotenv from 'dotenv';
-dotenv.config(); // pastikan .env dibaca sebelum config lainnya
+dotenv.config();
 
-import express from 'express';
-import webhookRoute from './routes/webhook.js';
+import axios from 'axios';
+import { TELEGRAM_API_BASE } from './config/telegram.js';
 
-const app = express();
-const PORT = process.env.PORT || 3100;
+const WEBHOOK_URL = 'https://lab.mugalearning.web.id/maghrib_mengaji/telehook';
 
-app.use(express.json());
+async function setWebhook() {
+  try {
+    const url = `${TELEGRAM_API_BASE}/setWebhook`;
+    const response = await axios.post(url, { url: WEBHOOK_URL });
+    console.log('Webhook berhasil diatur:', response.data);
+  } catch (error) {
+    console.error('Gagal mengatur webhook:', error.response?.data || error.message);
+  }
+}
 
-app.use('/', webhookRoute);
-
-app.get('/', (req, res) => {
-  res.send('Maghrib Mengaji bot is running.');
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+setWebhook();
