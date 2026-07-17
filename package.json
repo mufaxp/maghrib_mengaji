@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Chatbot Telegram Maghrib Mengaji",
   "main": "app.js",
+  "type": "module",
   "scripts": {
     "start": "node app.js",
     "set-webhook": "node setWebhook.js"

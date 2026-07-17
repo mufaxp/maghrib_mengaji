@@ -1,17 +1,16 @@
-require('dotenv').config();
-import express, { json } from 'express';
-import webhookRoute from './routes/webhook';
+import dotenv from 'dotenv';
+dotenv.config(); // pastikan .env dibaca sebelum config lainnya
+
+import express from 'express';
+import webhookRoute from './routes/webhook.js';
 
 const app = express();
 const PORT = process.env.PORT || 3100;
 
-// Middleware untuk parsing JSON body
-app.use(json());
+app.use(express.json());
 
-// Route webhook
 app.use('/', webhookRoute);
 
-// Health check sederhana (opsional)
 app.get('/', (req, res) => {
   res.send('Maghrib Mengaji bot is running.');
 });

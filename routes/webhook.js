@@ -1,8 +1,8 @@
-const express = require('express');
-const router = express.Router();
-const { handleWebhook } = require('../controllers/webhookController');
+import { Router } from 'express';
+import { handleWebhook } from '../controllers/webhookController.js';
 
-// POST /telehook (akan dipanggil oleh Nginx dari /maghrib_mengaji/telehook)
+const router = Router();
+
 router.post('/telehook', handleWebhook);
 
 export default router;
