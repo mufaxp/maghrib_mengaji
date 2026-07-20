@@ -72,28 +72,32 @@ export async function handleWebhook(req, res) {
           await sendMessage(chatId, fullText);
         }
       } else if (text === '/foto') {
-        const teacher = await getTeacherByTelegramId(chatId);
-        if (!teacher) {
-          await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
-        } else {
-          const reports = await getTodayReportDetailsByClass(teacher.class_id);
-          if (reports.length === 0) {
-            await sendMessage(chatId, 'Belum ada laporan foto untuk kelas Anda hari ini.');
+        try {
+          const teacher = await getTeacherByTelegramId(chatId);
+          if (!teacher) {
+            await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
           } else {
-            // Kirim notifikasi dulu bahwa foto akan dikirim
-            await sendMessage(chatId, `Mengirim ${reports.length} foto laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
-            // Kirim setiap foto satu per satu
-            for (const report of reports) {
-              const fullPath = path.join('uploads', report.file_path); // sesuaikan path
-              try {
-                await sendPhotoToTelegram(chatId, fullPath, `${report.full_name}`);
-              } catch (err) {
-                await sendMessage(chatId, `Gagal mengirim foto untuk ${report.full_name}.`);
+            const reports = await getTodayReportDetailsByClass(teacher.class_id);
+            if (reports.length === 0) {
+              await sendMessage(chatId, 'Belum ada laporan foto untuk kelas Anda hari ini.');
+            } else {
+              await sendMessage(chatId, `📸 Mengirim ${reports.length} foto laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
+              for (const report of reports) {
+                const fullPath = path.join('uploads', report.file_path);
+                try {
+                  await sendPhotoToTelegram(chatId, fullPath, `${report.full_name}`);
+                } catch (err) {
+                  await sendMessage(chatId, `Gagal mengirim foto untuk ${report.full_name}.`);
+                }
+                // Jeda 300 ms
+                await new Promise(resolve => setTimeout(resolve, 300));
               }
-              // Tambahkan jeda kecil agar tidak overload
-              await new Promise(resolve => setTimeout(resolve, 200));
+              await sendMessage(chatId, '✅ Semua foto telah dikirim.');
             }
           }
+        } catch (error) {
+          console.error('Error pada perintah /foto:', error);
+          await sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil laporan foto. Silakan coba lagi nanti.');
         }
       }
     }
