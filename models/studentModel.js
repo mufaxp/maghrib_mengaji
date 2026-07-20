@@ -29,3 +29,14 @@ export async function getClassNameById(classId) {
   const [rows] = await pool.query('SELECT name FROM classes WHERE id = ?', [classId]);
   return rows[0]?.name || '';
 }
+
+/**
+ * Menambahkan banyak siswa sekaligus ke dalam satu kelas.
+ * @param {number} classId - ID kelas
+ * @param {string[]} names - array nama lengkap siswa
+ */
+export async function insertStudents(classId, names) {
+  // Siapkan array of arrays untuk bulk insert
+  const values = names.map(name => [classId, name.trim()]);
+  await pool.query('INSERT INTO students (class_id, full_name) VALUES ?', [values]);
+}

@@ -9,13 +9,13 @@ import {
   studentSelectedMessage
 } from '../views/messageView.js';
 import { getLevels, getClassesByLevel } from '../models/classModel.js';
-import { getStudentsByClassId, getStudentById, getClassNameById } from '../models/studentModel.js';
 import { getTeacherByTelegramId } from '../models/teacherModel.js';
 import { createReport, getTodayReportsByClass } from '../models/reportModel.js';
 import { processPhoto, processVoice } from '../helpers/mediaHelper.js';
 import { getTodayReportDetailsByClass } from '../models/reportModel.js';
 import { sendPhotoToTelegram } from '../helpers/photoSender.js';
 import { sendVoiceToTelegram } from '../helpers/voiceSender.js';
+import { getStudentsByClassId, getStudentById, getClassNameById, insertStudents } from '../models/studentModel.js';
 
 // State sementara
 const userStates = new Map();
@@ -106,6 +106,40 @@ export async function handleWebhook(req, res) {
           console.error('Error pada perintah /foto:', error);
           await sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil laporan foto. Silakan coba lagi nanti.');
         }
+      } else if (text === '/tambah') {
+        const teacher = await getTeacherByTelegramId(chatId);
+        if (!teacher) {
+          await sendMessage(chatId, '❌ Hanya wali kelas yang dapat menambahkan siswa.');
+        } else {
+          // Simpan state menunggu daftar nama
+          userStates.set(chatId, {
+            step: 'awaiting_student_names',
+            class_id: teacher.class_id
+          });
+          await sendMessage(chatId, `📝 Silakan kirim daftar nama siswa kelas ${teacher.class_name} yang ingin ditambahkan.\nTulis satu nama per baris.`);
+        }
+      } else {
+        // Cek state khusus
+        const state = userStates.get(chatId);
+        if (state && state.step === 'awaiting_student_names') {
+          // Proses penambahan siswa
+          const classId = state.class_id;
+          // Pisahkan teks berdasarkan baris, abaikan baris kosong
+          const names = text.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+          if (names.length === 0) {
+            await sendMessage(chatId, '⚠️ Tidak ada nama yang valid. Kirim ulang dengan satu nama per baris.');
+            return;
+          }
+          try {
+            await insertStudents(classId, names);
+            await sendMessage(chatId, `✅ Berhasil menambahkan ${names.length} siswa ke dalam kelas.`);
+            userStates.delete(chatId);
+          } catch (error) {
+            console.error('Error menambahkan siswa:', error);
+            await sendMessage(chatId, '❌ Gagal menambahkan siswa. Pastikan format benar dan tidak ada duplikasi.');
+          }
+        }
+        // Jika tidak ada state, abaikan
       }
     }
 
@@ -187,7 +221,7 @@ export async function handleWebhook(req, res) {
           class_id: student.class_id,
           className: className,
           studentName: student.full_name,
-          step: 'awaiting_media'  // ganti dari 'awaiting_photo'
+          step: 'awaiting_media'
         });
 
         await sendMessage(chatId, `Silakan kirim foto atau voice note kegiatan Maghrib Mengaji Anda, ${student.full_name}.`);
