@@ -1,4 +1,4 @@
-// controllers/webhookController.js
+import path from 'path';
 import axios from 'axios';
 import { TELEGRAM_API_BASE } from '../config/telegram.js';
 import {
@@ -13,6 +13,8 @@ import { getStudentsByClassId, getStudentById, getClassNameById } from '../model
 import { getTeacherByTelegramId } from '../models/teacherModel.js';
 import { createReport, getTodayReportsByClass } from '../models/reportModel.js';
 import { processPhoto } from '../helpers/photoHelper.js';
+import { getTodayReportDetailsByClass } from '../models/reportModel.js';
+import { sendPhotoToTelegram } from '../helpers/photoSender.js';
 
 // State sementara
 const userStates = new Map();
@@ -68,6 +70,30 @@ export async function handleWebhook(req, res) {
           }
           const fullText = `${greetings} berikut ini laporan Maghrib Mengaji siswa kelas ${teacher.class_name} hari ini:\n${reportText}`;
           await sendMessage(chatId, fullText);
+        }
+      } else if (text === '/foto') {
+        const teacher = await getTeacherByTelegramId(chatId);
+        if (!teacher) {
+          await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
+        } else {
+          const reports = await getTodayReportDetailsByClass(teacher.class_id);
+          if (reports.length === 0) {
+            await sendMessage(chatId, 'Belum ada laporan foto untuk kelas Anda hari ini.');
+          } else {
+            // Kirim notifikasi dulu bahwa foto akan dikirim
+            await sendMessage(chatId, `Mengirim ${reports.length} foto laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
+            // Kirim setiap foto satu per satu
+            for (const report of reports) {
+              const fullPath = path.join('uploads', report.file_path); // sesuaikan path
+              try {
+                await sendPhotoToTelegram(chatId, fullPath, `${report.full_name}`);
+              } catch (err) {
+                await sendMessage(chatId, `Gagal mengirim foto untuk ${report.full_name}.`);
+              }
+              // Tambahkan jeda kecil agar tidak overload
+              await new Promise(resolve => setTimeout(resolve, 200));
+            }
+          }
         }
       }
     }
