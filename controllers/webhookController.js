@@ -10,7 +10,7 @@ import {
 } from '../views/messageView.js';
 import { getLevels, getClassesByLevel } from '../models/classModel.js';
 import { getTeacherByTelegramId } from '../models/teacherModel.js';
-import { createReport, getTodayReportsByClass } from '../models/reportModel.js';
+import { createReport, getTodayReportsByClass, hasReportedToday } from '../models/reportModel.js';
 import { processPhoto, processVoice } from '../helpers/mediaHelper.js';
 import { getTodayReportDetailsByClass } from '../models/reportModel.js';
 import { sendPhotoToTelegram } from '../helpers/photoSender.js';
@@ -54,8 +54,8 @@ export async function handleWebhook(req, res) {
         const { text: replyText, reply_markup } = welcomeMessage();
         await sendMessage(chatId, replyText, reply_markup);
       }
-      // Fitur guru: /pa
-      else if (text === '/pa') {
+      // Fitur guru: /list
+      else if (text === '/list') {
         const teacher = await getTeacherByTelegramId(chatId);
         if (!teacher) {
           await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
@@ -118,6 +118,11 @@ export async function handleWebhook(req, res) {
           });
           await sendMessage(chatId, `📝 Silakan kirim daftar nama siswa kelas ${teacher.class_name} yang ingin ditambahkan.\nTulis satu nama per baris.`);
         }
+      } else if (text === '/hapus') {
+        // Mode hapus laporan siswa
+        const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
+        await sendMessage(chatId, levelText, keyboard);
+        userStates.set(chatId, { step: 'deleting_report' });
       } else {
         // Cek state khusus
         const state = userStates.get(chatId);
@@ -139,7 +144,6 @@ export async function handleWebhook(req, res) {
             await sendMessage(chatId, '❌ Gagal menambahkan siswa. Pastikan format benar dan tidak ada duplikasi.');
           }
         }
-        // Jika tidak ada state, abaikan
       }
     }
 
@@ -150,6 +154,14 @@ export async function handleWebhook(req, res) {
       const state = userStates.get(chatId);
       if (state && state.step === 'awaiting_media') {
         const { student_id, className, studentName } = state;
+        // Cek apakah sudah lapor hari ini
+        const alreadyReported = await hasReportedToday(student_id);
+        if (alreadyReported) {
+          await sendMessage(chatId, `⚠️ Anda sudah mengirim laporan hari ini. Jika ingin mengganti, kirim /hapus terlebih dahulu.`);
+          userStates.delete(chatId); 
+          res.sendStatus(200);
+          return;
+        }
         try {
           let fileName;
           if (message.photo) {
@@ -184,7 +196,8 @@ export async function handleWebhook(req, res) {
         await sendMessage(chatId,
           'Anda masuk sebagai Guru. Berikut perintah yang tersedia:\n\n' +
           '/laporan - Melihat foto & voice note laporan siswa hari ini\n' +
-          '/pa - Ringkasan daftar siswa yang sudah melapor hari ini'
+          '/list - Daftar siswa yang sudah melapor hari ini\n' +
+          '/tambah - Menambahkan siswa ke kelas Anda'
         );
       } else if (data.startsWith('level:')) {
         const level = data.split(':')[1];
@@ -204,27 +217,35 @@ export async function handleWebhook(req, res) {
           const { text: studentText, reply_markup: keyboard } = studentSelectionMessage(students);
           await sendMessage(chatId, studentText, keyboard);
         }
-      } else if (data.startsWith('student:')) {
+            } else if (data.startsWith('student:')) {
         const studentId = parseInt(data.split(':')[1], 10);
         const student = await getStudentById(studentId);
         if (!student) {
           await sendMessage(chatId, 'Data siswa tidak ditemukan.');
         } else {
-          // Dapatkan nama kelas untuk penamaan file nanti
-          const classData = await getStudentsByClassId(student.class_id); 
-
           const className = await getClassNameById(student.class_id);
-          
-          // Simpan state untuk menunggu upload foto
-          userStates.set(chatId, {
-          student_id: student.id,
-          class_id: student.class_id,
-          className: className,
-          studentName: student.full_name,
-          step: 'awaiting_media'
-        });
+          const state = userStates.get(chatId);
 
-        await sendMessage(chatId, `Silakan kirim foto atau voice note kegiatan Maghrib Mengaji Anda, ${student.full_name}.`);
+          if (state && state.step === 'deleting_report') {
+            // Mode hapus: cek dan hapus laporan hari ini
+            const deleted = await deleteTodayReport(studentId);
+            if (deleted) {
+              await sendMessage(chatId, `Laporan hari ini untuk ${student.full_name} telah dihapus. Silakan kirim ulang laporan melalui menu Siswa.`);
+            } else {
+              await sendMessage(chatId, `${student.full_name} belum memiliki laporan hari ini.`);
+            }
+            userStates.delete(chatId);
+          } else {
+            // Mode normal: menunggu upload media
+            userStates.set(chatId, {
+              student_id: student.id,
+              class_id: student.class_id,
+              className: className,
+              studentName: student.full_name,
+              step: 'awaiting_media'
+            });
+            await sendMessage(chatId, `Silakan kirim foto atau voice note kegiatan Maghrib Mengaji Anda, ${student.full_name}.`);
+          }
         }
       }
     }

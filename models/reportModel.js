@@ -49,3 +49,33 @@ export async function getTodayReportDetailsByClass(classId, date) {
   );
   return rows;
 }
+
+/**
+ * Cek apakah siswa sudah melapor hari ini.
+ * @param {number} studentId
+ * @param {string} [date] - format 'YYYY-MM-DD', default hari ini
+ * @returns {Promise<boolean>}
+ */
+export async function hasReportedToday(studentId, date) {
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  const [rows] = await pool.query(
+    'SELECT id FROM reports WHERE student_id = ? AND DATE(created_at) = ? LIMIT 1',
+    [studentId, targetDate]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Hapus laporan siswa hari ini.
+ * @param {number} studentId
+ * @param {string} [date] - format 'YYYY-MM-DD', default hari ini
+ * @returns {Promise<boolean>} true jika ada yang dihapus
+ */
+export async function deleteTodayReport(studentId, date) {
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  const [result] = await pool.query(
+    'DELETE FROM reports WHERE student_id = ? AND DATE(created_at) = ?',
+    [studentId, targetDate]
+  );
+  return result.affectedRows > 0;
+}
