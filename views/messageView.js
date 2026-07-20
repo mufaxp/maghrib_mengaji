@@ -16,14 +16,12 @@ function buildInlineKeyboard(items, columns = 2) {
   return { inline_keyboard: keyboard };
 }
 
-/**
- * Tombol utama "Laporan Maghrib Mengaji" setelah /start.
- */
 export function welcomeMessage() {
-  const text = "Assalamu'alaikum, selamat datang di layanan Laporan Maghrib Mengaji.";
+  const text = "Assalamu'alaikum, selamat datang di layanan Laporan Maghrib Mengaji. Silakan pilih peran Anda:";
   const keyboard = buildInlineKeyboard([
-    { text: '📋 Laporan Maghrib Mengaji', callback_data: 'menu:laporan' }
-  ], 1);
+    { text: 'Siswa', callback_data: 'menu:siswa' },
+    { text: 'Guru', callback_data: 'menu:guru' }
+  ], 2);
   return { text, reply_markup: keyboard };
 }
 

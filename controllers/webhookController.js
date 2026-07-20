@@ -143,9 +143,15 @@ export async function handleWebhook(req, res) {
       const callbackId = callbackQuery.id;
       await answerCallbackQuery(callbackId);
 
-      if (data === 'menu:laporan') {
+      if (data === 'menu:siswa') {
         const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
         await sendMessage(chatId, levelText, keyboard);
+      } else if (data === 'menu:guru') {
+        await sendMessage(chatId,
+          'Anda masuk sebagai Guru. Berikut perintah yang tersedia:\n\n' +
+          '/laporan - Melihat foto & voice note laporan siswa hari ini\n' +
+          '/pa - Ringkasan daftar siswa yang sudah melapor hari ini'
+        );
       } else if (data.startsWith('level:')) {
         const level = data.split(':')[1];
         const classes = await getClassesByLevel(level);
