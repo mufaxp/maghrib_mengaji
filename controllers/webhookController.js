@@ -12,7 +12,7 @@ import { getLevels, getClassesByLevel } from '../models/classModel.js';
 import { getStudentsByClassId, getStudentById, getClassNameById } from '../models/studentModel.js';
 import { getTeacherByTelegramId } from '../models/teacherModel.js';
 import { createReport, getTodayReportsByClass } from '../models/reportModel.js';
-import { processPhoto } from '../helpers/photoHelper.js';
+import { processPhoto, processVoice } from '../helpers/mediaHelper.js';
 import { getTodayReportDetailsByClass } from '../models/reportModel.js';
 import { sendPhotoToTelegram } from '../helpers/photoSender.js';
 
@@ -102,27 +102,29 @@ export async function handleWebhook(req, res) {
       }
     }
 
-    // --- Foto masuk ---
-    if (update.message && update.message.photo) {
+    // --- Media masuk (foto atau voice) ---
+    if (update.message && (update.message.photo || update.message.voice)) {
       const message = update.message;
       const chatId = message.chat.id;
       const state = userStates.get(chatId);
-      if (state && state.step === 'awaiting_photo') {
-        // Proses foto
-        const { student_id, class_id, className, studentName } = state;
+      if (state && state.step === 'awaiting_media') {
+        const { student_id, className, studentName } = state;
         try {
-          const fileName = await processPhoto(message.photo, className, studentName);
+          let fileName;
+          if (message.photo) {
+            fileName = await processPhoto(message.photo, className, studentName);
+          } else if (message.voice) {
+            fileName = await processVoice(message.voice, className, studentName);
+          }
           await createReport(student_id, fileName);
           await sendMessage(chatId, `✅ Laporan berhasil dikirim. Terima kasih, ${studentName}.`);
         } catch (error) {
-          console.error('Error processing photo:', error);
-          await sendMessage(chatId, 'Maaf, terjadi kesalahan saat memproses foto. Silakan coba lagi.');
+          console.error('Error processing media:', error);
+          await sendMessage(chatId, 'Maaf, terjadi kesalahan saat memproses file. Silakan coba lagi.');
         }
-        // Hapus state setelah selesai
         userStates.delete(chatId);
       } else {
-        // Tidak ada state, abaikan atau beri tahu
-        await sendMessage(chatId, 'Silakan pilih menu Laporan Maghrib Mengaji terlebih dahulu untuk mengirim foto.');
+        await sendMessage(chatId, 'Silakan pilih menu Laporan Maghrib Mengaji terlebih dahulu untuk mengirim laporan.');
       }
     }
 
@@ -168,15 +170,14 @@ export async function handleWebhook(req, res) {
           
           // Simpan state untuk menunggu upload foto
           userStates.set(chatId, {
-            student_id: student.id,
-            class_id: student.class_id,
-            className: className,
-            studentName: student.full_name,
-            step: 'awaiting_photo'
-          });
+          student_id: student.id,
+          class_id: student.class_id,
+          className: className,
+          studentName: student.full_name,
+          step: 'awaiting_media'  // ganti dari 'awaiting_photo'
+        });
 
-          // Minta user mengirim foto
-          await sendMessage(chatId, `Silakan kirim foto kegiatan Maghrib Mengaji Anda, ${student.full_name}.`);
+        await sendMessage(chatId, `Silakan kirim foto atau voice note kegiatan Maghrib Mengaji Anda, ${student.full_name}.`);
         }
       }
     }
