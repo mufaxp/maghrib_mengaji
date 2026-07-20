@@ -67,7 +67,7 @@ export async function handleWebhook(req, res) {
         await sendMessage(chatId, replyText, reply_markup);
       }
       // Fitur guru: /list (sebelumnya /pa)
-            else if (text === '/list') {
+      else if (text === '/list') {
         const teacher = await getTeacherByTelegramId(chatId);
         if (!teacher) {
           await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
@@ -101,7 +101,6 @@ export async function handleWebhook(req, res) {
 
           await sendMessage(chatId, message);
         }
-      }
       } else if (text === '/laporan') {
         try {
           const teacher = await getTeacherByTelegramId(chatId);
@@ -145,7 +144,7 @@ export async function handleWebhook(req, res) {
             step: 'awaiting_student_names',
             class_id: teacher.class_id,
           });
-          await sendMessage(chatId, `Silakan kirim daftar nama siswa kelas ${teacher.class_name} yang ingin ditambahkan.\nTulis satu nama per baris.`);
+          await sendMessage(chatId, `📝 Silakan kirim daftar nama siswa kelas ${teacher.class_name} yang ingin ditambahkan.\nTulis satu nama per baris.`);
         }
       } else if (text === '/hapus') {
         const lastData = lastSelectedStudent.get(chatId);
@@ -159,7 +158,7 @@ export async function handleWebhook(req, res) {
               studentName: lastData.studentName,
               step: 'awaiting_media',
             });
-            lastSelectedStudent.set(chatId, { ...lastData }); // perbarui jika perlu
+            lastSelectedStudent.set(chatId, { ...lastData });
             await sendMessage(chatId, `Laporan hari ini untuk ${lastData.studentName} telah dihapus. Silakan kirimkan ulang laporannya!`);
           } else {
             await sendMessage(chatId, `${lastData.studentName} belum memiliki laporan hari ini.`);
@@ -240,7 +239,7 @@ export async function handleWebhook(req, res) {
         await sendMessage(chatId,
           'Anda masuk sebagai Guru. Berikut perintah yang tersedia:\n\n' +
           '/laporan - Melihat foto & voice note laporan siswa hari ini\n' +
-          '/list - Daftar siswa yang sudah melapor hari ini\n' +
+          '/list - Daftar siswa yang sudah & belum melapor\n' +
           '/tambah - Menambahkan siswa ke kelas Anda'
         );
       } else if (data.startsWith('level:')) {
@@ -271,7 +270,6 @@ export async function handleWebhook(req, res) {
           const state = userStates.get(chatId);
 
           if (state && state.step === 'deleting_report') {
-            // Mode hapus: hapus laporan lalu minta upload ulang
             const deleted = await deleteTodayReport(studentId);
             if (deleted) {
               userStates.set(chatId, {
@@ -281,7 +279,6 @@ export async function handleWebhook(req, res) {
                 studentName: student.full_name,
                 step: 'awaiting_media',
               });
-              // Simpan data terakhir
               lastSelectedStudent.set(chatId, {
                 student_id: student.id,
                 class_id: student.class_id,
@@ -294,7 +291,6 @@ export async function handleWebhook(req, res) {
               userStates.delete(chatId);
             }
           } else {
-            // Mode normal: pilih siswa -> minta upload media
             userStates.set(chatId, {
               student_id: student.id,
               class_id: student.class_id,
@@ -302,7 +298,6 @@ export async function handleWebhook(req, res) {
               studentName: student.full_name,
               step: 'awaiting_media',
             });
-            // Simpan data siswa terakhir
             lastSelectedStudent.set(chatId, {
               student_id: student.id,
               class_id: student.class_id,
