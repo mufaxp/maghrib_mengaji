@@ -9,7 +9,7 @@ import {
   studentSelectionMessage,
 } from '../views/messageView.js';
 import { getClassesByLevel } from '../models/classModel.js';
-import { getTeacherByTelegramId } from '../models/teacherModel.js';
+import { getTeacherByUsername } from '../models/teacherModel.js';
 import {
   createReport,
   getTodayReportsByClass,
@@ -55,7 +55,7 @@ async function answerCallbackQuery(callbackQueryId, text) {
 export async function handleWebhook(req, res) {
   try {
     const update = req.body;
-
+    const username = getUsernameFromUpdate(update);
     // --- Pesan teks ---
     if (update.message && update.message.text) {
       const message = update.message;
@@ -68,7 +68,11 @@ export async function handleWebhook(req, res) {
       }
       // Fitur guru: /list (sebelumnya /pa)
       else if (text === '/list') {
-        const teacher = await getTeacherByTelegramId(chatId);
+        if (!username) {
+          await sendMessage(chatId, 'Akun Telegram Anda tidak memiliki username. Silakan set username terlebih dahulu agar dapat menggunakan fitur guru.');
+          return;
+        }
+        const teacher = await getTeacherByUsername(username);
         if (!teacher) {
           await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
         } else {
@@ -103,7 +107,11 @@ export async function handleWebhook(req, res) {
         }
       } else if (text === '/laporan') {
         try {
-          const teacher = await getTeacherByTelegramId(chatId);
+          if (!username) {
+            await sendMessage(chatId, 'Akun Telegram Anda tidak memiliki username. Silakan set username terlebih dahulu agar dapat menggunakan fitur guru.');
+            return;
+          }
+          const teacher = await getTeacherByUsername(username);
           if (!teacher) {
             await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
           } else {
@@ -315,4 +323,10 @@ export async function handleWebhook(req, res) {
     console.error('Error handling webhook:', error);
     res.sendStatus(500);
   }
+}
+
+function getUsernameFromUpdate(update) {
+  if (update.message) return update.message.from?.username;
+  if (update.callback_query) return update.callback_query.from?.username;
+  return null;
 }
