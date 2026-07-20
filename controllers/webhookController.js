@@ -17,14 +17,19 @@ import { getStudentsByClassId } from '../models/studentModel.js';
  * @param {string} text
  * @param {object} [replyMarkup] - keyboard markup opsional
  */
-async function sendMessage(chatId, text, replyMarkup = null) {
+async function sendMessage(chatId, text, replyMarkup) {
   const url = `${TELEGRAM_API_BASE}/sendMessage`;
+  const body = {
+    chat_id: chatId,
+    text: text
+  };
+  // Hanya sertakan reply_markup jika ada nilainya (bukan undefined/null)
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
+  }
+
   try {
-    await axios.post(url, {
-      chat_id: chatId,
-      text: text,
-      reply_markup: replyMarkup
-    });
+    await axios.post(url, body);
   } catch (error) {
     console.error('Error sending message:', error.response?.data || error.message);
   }
