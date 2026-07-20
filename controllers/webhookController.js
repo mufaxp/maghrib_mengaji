@@ -10,7 +10,7 @@ import {
 } from '../views/messageView.js';
 import { getLevels, getClassesByLevel } from '../models/classModel.js';
 import { getTeacherByTelegramId } from '../models/teacherModel.js';
-import { createReport, getTodayReportsByClass, hasReportedToday } from '../models/reportModel.js';
+import { createReport, getTodayReportsByClass, getTodayReportDetailsByClass, hasReportedToday, deleteTodayReport } from '../models/reportModel.js';
 import { processPhoto, processVoice } from '../helpers/mediaHelper.js';
 import { getTodayReportDetailsByClass } from '../models/reportModel.js';
 import { sendPhotoToTelegram } from '../helpers/photoSender.js';
