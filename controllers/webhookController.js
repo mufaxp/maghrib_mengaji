@@ -15,6 +15,7 @@ import { createReport, getTodayReportsByClass } from '../models/reportModel.js';
 import { processPhoto, processVoice } from '../helpers/mediaHelper.js';
 import { getTodayReportDetailsByClass } from '../models/reportModel.js';
 import { sendPhotoToTelegram } from '../helpers/photoSender.js';
+import { sendVoiceToTelegram } from '../helpers/voiceSender.js';
 
 // State sementara
 const userStates = new Map();
@@ -71,7 +72,7 @@ export async function handleWebhook(req, res) {
           const fullText = `${greetings} berikut ini laporan Maghrib Mengaji siswa kelas ${teacher.class_name} hari ini:\n${reportText}`;
           await sendMessage(chatId, fullText);
         }
-      } else if (text === '/foto') {
+      } else if (text === '/laporan') {
         try {
           const teacher = await getTeacherByTelegramId(chatId);
           if (!teacher) {
@@ -79,17 +80,23 @@ export async function handleWebhook(req, res) {
           } else {
             const reports = await getTodayReportDetailsByClass(teacher.class_id);
             if (reports.length === 0) {
-              await sendMessage(chatId, 'Belum ada laporan foto untuk kelas Anda hari ini.');
+              await sendMessage(chatId, 'Belum ada laporan Maghrib Mengaji untuk kelas Anda hari ini.');
             } else {
-              await sendMessage(chatId, `📸 Mengirim ${reports.length} foto laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
-              for (const report of reports) {
+              await sendMessage(chatId, `Mengirim ${reports.length} laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
+                            for (const report of reports) {
                 const fullPath = path.join('uploads', report.file_path);
+                const ext = path.extname(report.file_path).toLowerCase();
                 try {
-                  await sendPhotoToTelegram(chatId, fullPath, `${report.full_name}`);
+                  if (['.webp', '.jpg', '.jpeg', '.png'].includes(ext)) {
+                    await sendPhotoToTelegram(chatId, fullPath, `${report.full_name}`);
+                  } else if (['.ogg', '.oga', '.mp3', '.wav'].includes(ext)) {
+                    await sendVoiceToTelegram(chatId, fullPath, `${report.full_name}`);
+                  } else {
+                    await sendMessage(chatId, `⚠️ Format file tidak didukung untuk ${report.full_name}.`);
+                  }
                 } catch (err) {
-                  await sendMessage(chatId, `Gagal mengirim foto untuk ${report.full_name}.`);
+                  await sendMessage(chatId, `⚠️ Gagal mengirim file untuk ${report.full_name}.`);
                 }
-                // Jeda 300 ms
                 await new Promise(resolve => setTimeout(resolve, 300));
               }
               await sendMessage(chatId, '✅ Semua foto telah dikirim.');
