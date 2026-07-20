@@ -36,6 +36,7 @@ export async function getClassNameById(classId) {
  * @param {string[]} names - array nama lengkap siswa
  */
 export async function insertStudents(classId, names) {
+  // Siapkan array of arrays untuk bulk insert
   const values = names.map(name => [classId, name.trim()]);
-  await pool.query('INSERT IGNORE INTO students (class_id, full_name) VALUES ?', [values]);
+  await pool.query('INSERT INTO students (class_id, full_name) VALUES ?', [values]);
 }

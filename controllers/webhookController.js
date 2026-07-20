@@ -67,23 +67,41 @@ export async function handleWebhook(req, res) {
         await sendMessage(chatId, replyText, reply_markup);
       }
       // Fitur guru: /list (sebelumnya /pa)
-      else if (text === '/list') {
+            else if (text === '/list') {
         const teacher = await getTeacherByTelegramId(chatId);
         if (!teacher) {
           await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
         } else {
+          // Ambil semua siswa di kelas ini
+          const allStudents = await getStudentsByClassId(teacher.class_id);
+          // Ambil nama-nama yang sudah lapor hari ini
+          const reportedNames = await getTodayReportsByClass(teacher.class_id);
+
+          // Buat daftar siswa yang belum lapor
+          const reportedSet = new Set(reportedNames);
+          const notReported = allStudents.filter(s => !reportedSet.has(s.full_name)).map(s => s.full_name);
+
           const panggilan = teacher.gender === 0 ? 'Bu' : 'Pak';
-          const greetings = `Assalamu'alaikum ${panggilan} ${teacher.full_name},`;
-          const siswaList = await getTodayReportsByClass(teacher.class_id);
-          let reportText = '';
-          if (siswaList.length > 0) {
-            reportText = siswaList.map((name, idx) => `${idx+1}. ${name}`).join('\n');
+          let message = `Assalamu'alaikum ${panggilan} ${teacher.full_name},\n`;
+          message += `berikut laporan Maghrib Mengaji siswa kelas ${teacher.class_name} hari ini:\n\n`;
+
+          if (reportedNames.length > 0) {
+            message += `✅ Sudah melapor (${reportedNames.length}):\n`;
+            message += reportedNames.map((name, i) => `${i+1}. ${name}`).join('\n');
           } else {
-            reportText = 'Belum ada siswa yang mengirim laporan hari ini.';
+            message += `✅ Sudah melapor: (belum ada)\n`;
           }
-          const fullText = `${greetings} berikut ini laporan Maghrib Mengaji siswa kelas ${teacher.class_name} hari ini:\n${reportText}`;
-          await sendMessage(chatId, fullText);
+
+          message += `\n\n❌ Belum melapor (${notReported.length}):\n`;
+          if (notReported.length > 0) {
+            message += notReported.map((name, i) => `${i+1}. ${name}`).join('\n');
+          } else {
+            message += `(semua sudah melapor 🎉)`;
+          }
+
+          await sendMessage(chatId, message);
         }
+      }
       } else if (text === '/laporan') {
         try {
           const teacher = await getTeacherByTelegramId(chatId);
