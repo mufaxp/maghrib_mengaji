@@ -9,25 +9,18 @@ import {
   studentSelectedMessage
 } from '../views/messageView.js';
 import { getLevels, getClassesByLevel } from '../models/classModel.js';
-import { getStudentsByClassId } from '../models/studentModel.js';
+import { getStudentsByClassId, getStudentById, getClassNameById } from '../models/studentModel.js';
+import { getTeacherByTelegramId } from '../models/teacherModel.js';
+import { createReport, getTodayReportsByClass } from '../models/reportModel.js';
+import { processPhoto } from '../helpers/photoHelper.js';
 
-/**
- * Mengirim pesan teks (tanpa keyboard) atau dengan keyboard.
- * @param {number|string} chatId
- * @param {string} text
- * @param {object} [replyMarkup] - keyboard markup opsional
- */
+// State sementara
+const userStates = new Map();
+
 async function sendMessage(chatId, text, replyMarkup) {
   const url = `${TELEGRAM_API_BASE}/sendMessage`;
-  const body = {
-    chat_id: chatId,
-    text: text
-  };
-  // Hanya sertakan reply_markup jika ada nilainya (bukan undefined/null)
-  if (replyMarkup) {
-    body.reply_markup = replyMarkup;
-  }
-
+  const body = { chat_id: chatId, text: text };
+  if (replyMarkup) body.reply_markup = replyMarkup;
   try {
     await axios.post(url, body);
   } catch (error) {
@@ -35,31 +28,20 @@ async function sendMessage(chatId, text, replyMarkup) {
   }
 }
 
-/**
- * Menjawab callback query agar spinner di tombol berhenti.
- * @param {string} callbackQueryId
- * @param {string} [text] - notifikasi opsional (tidak muncul ke user)
- */
 async function answerCallbackQuery(callbackQueryId, text) {
   const url = `${TELEGRAM_API_BASE}/answerCallbackQuery`;
   try {
-    await axios.post(url, {
-      callback_query_id: callbackQueryId,
-      text: text
-    });
+    await axios.post(url, { callback_query_id: callbackQueryId, text: text });
   } catch (error) {
     console.error('Error answerCallbackQuery:', error.response?.data || error.message);
   }
 }
 
-/**
- * Menangani update yang diterima dari webhook.
- */
 export async function handleWebhook(req, res) {
   try {
     const update = req.body;
 
-    // Tangani pesan biasa
+    // --- Pesan teks ---
     if (update.message && update.message.text) {
       const message = update.message;
       const chatId = message.chat.id;
@@ -69,24 +51,64 @@ export async function handleWebhook(req, res) {
         const { text: replyText, reply_markup } = welcomeMessage();
         await sendMessage(chatId, replyText, reply_markup);
       }
-      // else: abaikan perintah lain
+      // Fitur guru: /pa
+      else if (text === '/pa') {
+        const teacher = await getTeacherByTelegramId(chatId);
+        if (!teacher) {
+          await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
+        } else {
+          const panggilan = teacher.gender === 0 ? 'Bu' : 'Pak';
+          const greetings = `Assalamu'alaikum ${panggilan} ${teacher.full_name},`;
+          const siswaList = await getTodayReportsByClass(teacher.class_id);
+          let reportText = '';
+          if (siswaList.length > 0) {
+            reportText = siswaList.map((name, idx) => `${idx+1}. ${name}`).join('\n');
+          } else {
+            reportText = 'Belum ada siswa yang mengirim laporan hari ini.';
+          }
+          const fullText = `${greetings} berikut ini laporan Maghrib Mengaji siswa kelas ${teacher.class_name} hari ini:\n${reportText}`;
+          await sendMessage(chatId, fullText);
+        }
+      }
     }
 
-    // Tangani callback query dari inline keyboard
+    // --- Foto masuk ---
+    if (update.message && update.message.photo) {
+      const message = update.message;
+      const chatId = message.chat.id;
+      const state = userStates.get(chatId);
+      if (state && state.step === 'awaiting_photo') {
+        // Proses foto
+        const { student_id, class_id, className, studentName } = state;
+        try {
+          const fileName = await processPhoto(message.photo, className, studentName);
+          await createReport(student_id, fileName);
+          await sendMessage(chatId, `✅ Laporan berhasil dikirim. Terima kasih, ${studentName}.`);
+        } catch (error) {
+          console.error('Error processing photo:', error);
+          await sendMessage(chatId, 'Maaf, terjadi kesalahan saat memproses foto. Silakan coba lagi.');
+        }
+        // Hapus state setelah selesai
+        userStates.delete(chatId);
+      } else {
+        // Tidak ada state, abaikan atau beri tahu
+        await sendMessage(chatId, 'Silakan pilih menu Laporan Maghrib Mengaji terlebih dahulu untuk mengirim foto.');
+      }
+    }
+
+    // --- Callback query ---
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
       const chatId = callbackQuery.message.chat.id;
       const data = callbackQuery.data;
       const callbackId = callbackQuery.id;
-
-      // Jawab dulu agar spinner hilang
       await answerCallbackQuery(callbackId);
 
       if (data === 'menu:laporan') {
         const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
         await sendMessage(chatId, levelText, keyboard);
       } else if (data.startsWith('level:')) {
-        const level = data.split(':')[1]; // X, XI, XII
+        const level = data.split(':')[1];
         const classes = await getClassesByLevel(level);
         if (classes.length === 0) {
           await sendMessage(chatId, 'Tidak ada kelas tersedia untuk jenjang ini.');
@@ -105,14 +127,26 @@ export async function handleWebhook(req, res) {
         }
       } else if (data.startsWith('student:')) {
         const studentId = parseInt(data.split(':')[1], 10);
-        
-        // Dapatkan nama siswa dari database untuk menampilkan pesan konfirmasi
-        const { getStudentById } = await import('../models/studentModel.js');
         const student = await getStudentById(studentId);
-        if (student) {
-          await sendMessage(chatId, studentSelectedMessage(student.full_name));
-        } else {
+        if (!student) {
           await sendMessage(chatId, 'Data siswa tidak ditemukan.');
+        } else {
+          // Dapatkan nama kelas untuk penamaan file nanti
+          const classData = await getStudentsByClassId(student.class_id); 
+
+          const className = await getClassNameById(student.class_id);
+          
+          // Simpan state untuk menunggu upload foto
+          userStates.set(chatId, {
+            student_id: student.id,
+            class_id: student.class_id,
+            className: className,
+            studentName: student.full_name,
+            step: 'awaiting_photo'
+          });
+
+          // Minta user mengirim foto
+          await sendMessage(chatId, `Silakan kirim foto kegiatan Maghrib Mengaji Anda, ${student.full_name}.`);
         }
       }
     }

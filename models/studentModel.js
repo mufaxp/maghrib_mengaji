@@ -14,8 +14,18 @@ export async function getStudentsByClassId(classId) {
 }
 export async function getStudentById(studentId) {
   const [rows] = await pool.query(
-    'SELECT id, full_name FROM students WHERE id = ?',
+    'SELECT id, full_name, class_id FROM students WHERE id = ?',
     [studentId]
   );
   return rows[0] || null;
+}
+
+/**
+ * Mendapatkan data kelas (name) berdasarkan class_id
+ * @param {number} classId
+ * @returns {string}
+ */
+export async function getClassNameById(classId) {
+  const [rows] = await pool.query('SELECT name FROM classes WHERE id = ?', [classId]);
+  return rows[0]?.name || '';
 }
