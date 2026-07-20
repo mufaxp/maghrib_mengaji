@@ -99,7 +99,7 @@ export async function handleWebhook(req, res) {
                 }
                 await new Promise(resolve => setTimeout(resolve, 300));
               }
-              await sendMessage(chatId, '✅ Semua foto telah dikirim.');
+              await sendMessage(chatId, '✅ Semua data laporan telah dikirim.');
             }
           }
         } catch (error) {
