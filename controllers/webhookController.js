@@ -56,6 +56,7 @@ export async function handleWebhook(req, res) {
   try {
     const update = req.body;
     const username = getUsernameFromUpdate(update);
+
     // --- Pesan teks ---
     if (update.message && update.message.text) {
       const message = update.message;
@@ -66,7 +67,7 @@ export async function handleWebhook(req, res) {
         const { text: replyText, reply_markup } = welcomeMessage();
         await sendMessage(chatId, replyText, reply_markup);
       }
-      // Fitur guru: /list (sebelumnya /pa)
+      // Fitur guru: /list
       else if (text === '/list') {
         if (!username) {
           await sendMessage(chatId, 'Akun Telegram Anda tidak memiliki username. Silakan set username terlebih dahulu agar dapat menggunakan fitur guru.');
@@ -76,12 +77,9 @@ export async function handleWebhook(req, res) {
         if (!teacher) {
           await sendMessage(chatId, 'Anda tidak terdaftar sebagai wali kelas.');
         } else {
-          // Ambil semua siswa di kelas ini
           const allStudents = await getStudentsByClassId(teacher.class_id);
-          // Ambil nama-nama yang sudah lapor hari ini
           const reportedNames = await getTodayReportsByClass(teacher.class_id);
 
-          // Buat daftar siswa yang belum lapor
           const reportedSet = new Set(reportedNames);
           const notReported = allStudents.filter(s => !reportedSet.has(s.full_name)).map(s => s.full_name);
 
@@ -143,8 +141,12 @@ export async function handleWebhook(req, res) {
           console.error('Error pada perintah /laporan:', error);
           await sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil laporan. Silakan coba lagi nanti.');
         }
-      } else if (text === '/tambah') {
-        const teacher = await getTeacherByTelegramId(chatId);
+            } else if (text === '/tambah') {
+        if (!username) {
+          await sendMessage(chatId, 'Akun Telegram Anda tidak memiliki username. Silakan set username terlebih dahulu agar dapat menggunakan fitur guru.');
+          return;
+        }
+        const teacher = await getTeacherByUsername(username);
         if (!teacher) {
           await sendMessage(chatId, '❌ Hanya wali kelas yang dapat menambahkan siswa.');
         } else {
@@ -167,9 +169,9 @@ export async function handleWebhook(req, res) {
               step: 'awaiting_media',
             });
             lastSelectedStudent.set(chatId, { ...lastData });
-            await sendMessage(chatId, `Laporan hari ini untuk ${lastData.studentName} telah dihapus. Silakan kirimkan ulang laporannya!`);
+            await sendMessage(chatId, `🗑️ Laporan hari ini untuk ${lastData.studentName} telah dihapus. Silakan kirimkan ulang laporannya!`);
           } else {
-            await sendMessage(chatId, `${lastData.studentName} belum memiliki laporan hari ini.`);
+            await sendMessage(chatId, `ℹ️ ${lastData.studentName} belum memiliki laporan hari ini.`);
           }
         } else {
           const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
@@ -177,7 +179,6 @@ export async function handleWebhook(req, res) {
           userStates.set(chatId, { step: 'deleting_report' });
         }
       } else {
-        // Cek state khusus menunggu nama siswa (dari /tambah)
         const state = userStates.get(chatId);
         if (state && state.step === 'awaiting_student_names') {
           const classId = state.class_id;
@@ -195,7 +196,6 @@ export async function handleWebhook(req, res) {
             await sendMessage(chatId, '❌ Gagal menambahkan siswa. Pastikan format benar dan tidak ada duplikasi.');
           }
         }
-        // Jika tidak ada state khusus, abaikan
       }
     }
 
@@ -293,9 +293,9 @@ export async function handleWebhook(req, res) {
                 className: className,
                 studentName: student.full_name,
               });
-              await sendMessage(chatId, `Laporan hari ini untuk ${student.full_name} telah dihapus. Silakan kirimkan ulang laporannya!`);
+              await sendMessage(chatId, `🗑️ Laporan hari ini untuk ${student.full_name} telah dihapus. Silakan kirimkan ulang laporannya!`);
             } else {
-              await sendMessage(chatId, `${student.full_name} belum memiliki laporan hari ini.`);
+              await sendMessage(chatId, `ℹ️ ${student.full_name} belum memiliki laporan hari ini.`);
               userStates.delete(chatId);
             }
           } else {
