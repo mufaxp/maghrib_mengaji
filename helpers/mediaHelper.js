@@ -1,4 +1,3 @@
-// helpers/mediaHelper.js
 import axios from 'axios';
 import sharp from 'sharp';
 import path from 'path';
@@ -20,10 +19,6 @@ async function saveFile(fileName, buffer) {
   await fs.writeFile(path.join(uploadDir, fileName), buffer);
 }
 
-/**
- * Hapus file fisik dari folder uploads.
- * @param {string} fileName - nama file yang akan dihapus
- */
 export async function deleteLocalFile(fileName) {
   if (!fileName) return;
   try {

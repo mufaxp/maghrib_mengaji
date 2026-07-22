@@ -154,7 +154,7 @@ async function processUpdate(update) {
       if (reports.length === 0) {
         await sendMessage(chatId, 'Belum ada laporan Maghrib Mengaji untuk kelas Anda hari ini.');
       } else {
-        await sendMessage(chatId, `📸 Mengirim ${reports.length} laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
+        await sendMessage(chatId, `Mengirim ${reports.length} laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
         sendReportsInBackground(chatId, reports);
       }
     }

@@ -48,3 +48,10 @@ export function studentSelectionMessage(students) {
   const keyboard = buildInlineKeyboard(items, 2);
   return { text, reply_markup: keyboard };
 }
+
+export function startButtonKeyboard() {
+  const keyboard = buildInlineKeyboard([
+    { text: 'Mulai', callback_data: 'menu:start' }
+  ], 1);
+  return { reply_markup: keyboard };
+}
