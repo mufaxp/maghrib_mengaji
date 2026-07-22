@@ -79,3 +79,18 @@ export async function deleteTodayReport(studentId, date) {
   );
   return result.affectedRows > 0;
 }
+
+/**
+ * Ambil file_path laporan siswa hari ini.
+ * @param {number} studentId
+ * @param {string} [date]
+ * @returns {Promise<string|null>}
+ */
+export async function getTodayReportFilePath(studentId, date) {
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  const [rows] = await pool.query(
+    'SELECT file_path FROM reports WHERE student_id = ? AND DATE(created_at) = ? LIMIT 1',
+    [studentId, targetDate]
+  );
+  return rows.length > 0 ? rows[0].file_path : null;
+}
