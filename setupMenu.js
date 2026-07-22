@@ -7,20 +7,16 @@ async function setupMenu() {
   try {
     await axios.post(`${TELEGRAM_API_BASE}/setMyCommands`, {
       commands: [
-        { command: 'start', description: 'Mulai / tampilkan menu utama' },
-        { command: 'list', description: 'Lihat daftar laporan (guru)' },
-        { command: 'laporan', description: 'Kirim foto & voice laporan (guru)' },
-        { command: 'tambah', description: 'Tambah siswa (guru)' },
-        { command: 'hapus', description: 'Hapus laporan hari ini (siswa)' },
+        { command: 'start', description: 'Mulai' }
       ],
       scope: { type: 'default' }
     });
-    console.log('✅ Daftar perintah berhasil diatur.');
+    console.log('✅ Daftar perintah diatur: hanya /start.');
 
     await axios.post(`${TELEGRAM_API_BASE}/setChatMenuButton`, {
       menu_button: { type: 'commands' }
     });
-    console.log('✅ Menu button diaktifkan. User bisa mengakses /start dari menu.');
+    console.log('✅ Menu button diaktifkan. User hanya melihat tombol Mulai.');
   } catch (error) {
     console.error('❌ Gagal mengatur menu:', error.response?.data || error.message);
   }
