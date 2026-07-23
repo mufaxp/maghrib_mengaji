@@ -1,3 +1,4 @@
+// controllers/webhookController.js
 import path from 'path';
 import axios from 'axios';
 import { TELEGRAM_API_BASE } from '../config/telegram.js';
@@ -12,6 +13,7 @@ import {
   getTeacherByUsername,
   getTeacherByClassId,
   updateTeacherByClassId,
+  moveTeacher,
 } from '../models/teacherModel.js';
 import {
   createReport,
@@ -31,9 +33,9 @@ import {
   insertStudents,
 } from '../models/studentModel.js';
 
-// State terpadu dengan TTL
+State 
 const userStates = new Map();
-const STATE_TTL = 60 * 60 * 1000;
+const STATE_TTL = 60 * 60 * 1000; // 60 menit
 
 function setUserState(chatId, data) {
   clearUserState(chatId);
@@ -52,7 +54,7 @@ function clearUserState(chatId) {
   userStates.delete(chatId);
 }
 
-// Utilitas
+// Utilitas 
 async function sendMessage(chatId, text, replyMarkup) {
   const url = `${TELEGRAM_API_BASE}/sendMessage`;
   const body = { chat_id: chatId, text: text };
@@ -79,7 +81,7 @@ function getUsernameFromUpdate(update) {
   return null;
 }
 
-// Background task pengiriman laporan
+// Background task 
 async function sendReportsInBackground(chatId, reports) {
   for (const report of reports) {
     const fullPath = path.join('uploads', report.file_path);
@@ -100,20 +102,18 @@ async function sendReportsInBackground(chatId, reports) {
   await sendMessage(chatId, '✅ Semua data laporan telah dikirim.').catch(() => {});
 }
 
-// Proses Update
+// Proses Update 
 async function processUpdate(update) {
   const username = getUsernameFromUpdate(update);
+  const adminUsernames = process.env.ADMIN_USERNAMES
+    ? process.env.ADMIN_USERNAMES.split(',').map(u => u.trim())
+    : [];
 
-  // Pesan teks
+  // Pesan teks 
   if (update.message && update.message.text) {
     const message = update.message;
     const chatId = message.chat.id;
     const text = message.text.trim();
-
-    // Verifikasi admin (untuk perintah tertentu)
-    const adminUsernames = process.env.ADMIN_USERNAMES
-      ? process.env.ADMIN_USERNAMES.split(',').map(u => u.trim())
-      : [];
 
     if (text === '/start') {
       const { text: replyText, reply_markup } = welcomeMessage();
@@ -218,20 +218,26 @@ async function processUpdate(update) {
       }
     }
     else if (text === '/gantiwalas') {
-      // Cek akses admin
       if (!username || !adminUsernames.includes(username)) {
         await sendMessage(chatId, '❌ Anda tidak memiliki akses admin.');
         return;
       }
-      // Mulai alur pilih jenjang
       const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
       await sendMessage(chatId, levelText, keyboard);
       setUserState(chatId, { step: 'ganti_walas_select_level' });
     }
+    else if (text === '/pindahwalas') {
+      if (!username || !adminUsernames.includes(username)) {
+        await sendMessage(chatId, '❌ Anda tidak memiliki akses admin.');
+        return;
+      }
+      await sendMessage(chatId, 'Masukkan username guru yang akan dipindahkan (tanpa @).');
+      setUserState(chatId, { step: 'pindah_walas_get_username' });
+    }
     else {
-      // Cek state lain (input nama siswa, guru baru, dll)
+      // Cek state lainnya
       const state = userStates.get(chatId);
-      if (!state) return; // tidak ada state, abaikan
+      if (!state) return;
 
       if (state.step === 'awaiting_student_names') {
         const classId = state.class_id;
@@ -285,10 +291,28 @@ async function processUpdate(update) {
         }
         clearUserState(chatId);
       }
+      else if (state.step === 'pindah_walas_get_username') {
+        const targetUsername = text.trim().replace('@', '');
+        const guru = await getTeacherByUsername(targetUsername);
+        if (!guru) {
+          await sendMessage(chatId, '❌ Guru dengan username tersebut tidak ditemukan.');
+          clearUserState(chatId);
+          return;
+        }
+        // Simpan data guru pindahan
+        setUserState(chatId, {
+          step: 'pindah_walas_select_level',
+          movedUsername: targetUsername,
+          movedFullName: guru.full_name,
+          movedGender: guru.gender,
+        });
+        const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
+        await sendMessage(chatId, levelText, keyboard);
+      }
     }
   }
 
-  // Media masuk (foto atau voice)
+  // Media masuk
   if (update.message && (update.message.photo || update.message.voice)) {
     const message = update.message;
     const chatId = message.chat.id;
@@ -342,7 +366,19 @@ async function processUpdate(update) {
       );
     } else if (data.startsWith('level:')) {
       const level = data.split(':')[1];
-      // Mode admin: ganti walas
+      // Mode pindah walas: pilih jenjang setelah username didapat
+      if (state && state.step === 'pindah_walas_select_level') {
+        const classes = await getClassesByLevel(level);
+        if (classes.length === 0) {
+          await sendMessage(chatId, 'Tidak ada kelas di jenjang ini.');
+        } else {
+          const { text: classText, reply_markup: keyboard } = classSelectionMessage(classes);
+          await sendMessage(chatId, classText, keyboard);
+          setUserState(chatId, { ...state, step: 'pindah_walas_select_class' });
+        }
+        return;
+      }
+      // Mode ganti walas
       if (state && state.step === 'ganti_walas_select_level') {
         const classes = await getClassesByLevel(level);
         if (classes.length === 0) {
@@ -364,7 +400,27 @@ async function processUpdate(update) {
       }
     } else if (data.startsWith('class:')) {
       const classId = parseInt(data.split(':')[1], 10);
-      // Mode admin: ganti walas
+      // Mode pindah walas
+      if (state && state.step === 'pindah_walas_select_class') {
+        try {
+          const result = await moveTeacher(state.movedUsername, classId);
+          const movedGender = result.movedTeacher.gender === 0 ? 'Bu' : 'Pak';
+          let oldInfo = '';
+          if (result.oldTarget) {
+            const oldGender = result.oldTarget.gender === 0 ? 'Bu' : 'Pak';
+            oldInfo = `dari ${oldGender} ${result.oldTarget.full_name}`;
+          } else {
+            oldInfo = `dari (tidak ada)`;
+          }
+          await sendMessage(chatId, `✅ Wali kelas ${result.className} telah dirubah ${oldInfo} menjadi ${movedGender} ${result.movedTeacher.full_name}.`);
+        } catch (error) {
+          console.error('Error pindah walas:', error);
+          await sendMessage(chatId, '❌ Gagal memindahkan wali kelas.');
+        }
+        clearUserState(chatId);
+        return;
+      }
+      // Mode ganti walas
       if (state && state.step === 'ganti_walas_select_class') {
         const teacher = await getTeacherByClassId(classId);
         const className = await getClassNameById(classId);
@@ -421,7 +477,6 @@ async function processUpdate(update) {
           clearUserState(chatId);
         }
       } else {
-        // Mode normal: pilih siswa
         const lastStudentInfo = {
           student_id: student.id,
           class_id: student.class_id,
