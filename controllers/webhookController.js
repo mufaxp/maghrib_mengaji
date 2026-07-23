@@ -1,4 +1,3 @@
-// controllers/webhookController.js
 import path from 'path';
 import axios from 'axios';
 import { TELEGRAM_API_BASE } from '../config/telegram.js';
@@ -33,7 +32,7 @@ import {
   insertStudents,
 } from '../models/studentModel.js';
 
-State 
+// State 
 const userStates = new Map();
 const STATE_TTL = 60 * 60 * 1000; // 60 menit
 
@@ -235,7 +234,6 @@ async function processUpdate(update) {
       setUserState(chatId, { step: 'pindah_walas_get_username' });
     }
     else {
-      // Cek state lainnya
       const state = userStates.get(chatId);
       if (!state) return;
 
@@ -299,7 +297,6 @@ async function processUpdate(update) {
           clearUserState(chatId);
           return;
         }
-        // Simpan data guru pindahan
         setUserState(chatId, {
           step: 'pindah_walas_select_level',
           movedUsername: targetUsername,
@@ -312,7 +309,7 @@ async function processUpdate(update) {
     }
   }
 
-  // Media masuk
+  // Media masuk 
   if (update.message && (update.message.photo || update.message.voice)) {
     const message = update.message;
     const chatId = message.chat.id;
@@ -344,7 +341,7 @@ async function processUpdate(update) {
     }
   }
 
-  // Callback query
+  // Callback query 
   if (update.callback_query) {
     const callbackQuery = update.callback_query;
     const chatId = callbackQuery.message.chat.id;
@@ -366,7 +363,6 @@ async function processUpdate(update) {
       );
     } else if (data.startsWith('level:')) {
       const level = data.split(':')[1];
-      // Mode pindah walas: pilih jenjang setelah username didapat
       if (state && state.step === 'pindah_walas_select_level') {
         const classes = await getClassesByLevel(level);
         if (classes.length === 0) {
@@ -378,7 +374,6 @@ async function processUpdate(update) {
         }
         return;
       }
-      // Mode ganti walas
       if (state && state.step === 'ganti_walas_select_level') {
         const classes = await getClassesByLevel(level);
         if (classes.length === 0) {
@@ -390,7 +385,6 @@ async function processUpdate(update) {
         }
         return;
       }
-      // Mode normal
       const classes = await getClassesByLevel(level);
       if (classes.length === 0) {
         await sendMessage(chatId, 'Tidak ada kelas tersedia untuk jenjang ini.');
@@ -400,7 +394,6 @@ async function processUpdate(update) {
       }
     } else if (data.startsWith('class:')) {
       const classId = parseInt(data.split(':')[1], 10);
-      // Mode pindah walas
       if (state && state.step === 'pindah_walas_select_class') {
         try {
           const result = await moveTeacher(state.movedUsername, classId);
@@ -410,7 +403,7 @@ async function processUpdate(update) {
             const oldGender = result.oldTarget.gender === 0 ? 'Bu' : 'Pak';
             oldInfo = `dari ${oldGender} ${result.oldTarget.full_name}`;
           } else {
-            oldInfo = `dari (tidak ada)`;
+            oldInfo = 'dari (tidak ada)';
           }
           await sendMessage(chatId, `✅ Wali kelas ${result.className} telah dirubah ${oldInfo} menjadi ${movedGender} ${result.movedTeacher.full_name}.`);
         } catch (error) {
@@ -420,7 +413,6 @@ async function processUpdate(update) {
         clearUserState(chatId);
         return;
       }
-      // Mode ganti walas
       if (state && state.step === 'ganti_walas_select_class') {
         const teacher = await getTeacherByClassId(classId);
         const className = await getClassNameById(classId);
@@ -433,7 +425,6 @@ async function processUpdate(update) {
         setUserState(chatId, { step: 'awaiting_new_teacher_name', class_id: classId });
         return;
       }
-      // Mode normal
       const students = await getStudentsByClassId(classId);
       if (students.length === 0) {
         await sendMessage(chatId, 'Belum ada siswa terdaftar di kelas ini.');
@@ -497,7 +488,7 @@ async function processUpdate(update) {
   }
 }
 
-// Handler Webhook
+// Handler Webhook 
 export async function handleWebhook(req, res) {
   res.sendStatus(200);
   const update = req.body;
