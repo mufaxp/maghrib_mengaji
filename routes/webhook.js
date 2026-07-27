@@ -4,6 +4,6 @@ import { handleWebhook, uploadMiniAppHandler } from '../controllers/webhookContr
 const router = Router();
 
 router.post('/telehook', handleWebhook);
-router.post('/api/upload-miniapp', uploadMiniAppHandler);
+router.post('/upload-miniapp', uploadMiniAppHandler);
 
 export default router;

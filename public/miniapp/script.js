@@ -18,7 +18,7 @@ async function uploadFile(blob, type) {
 
   statusEl.textContent = 'Mengunggah...';
   try {
-    const res = await fetch('/api/upload-miniapp', {
+    const res = await fetch('/maghrib_mengaji/upload-miniapp', {
       method: 'POST',
       body: formData
     });
