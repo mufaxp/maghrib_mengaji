@@ -9,7 +9,7 @@ if (!token) {
   statusEl.textContent = 'Token tidak valid. Silakan mulai ulang dari chat.';
 }
 
-// Elemen UI 
+// Elemen UI
 const mainButtons = document.getElementById('main-buttons');
 const cameraContainer = document.getElementById('camera-container');
 const videoEl = document.getElementById('video');
@@ -18,7 +18,8 @@ const btnCapture = document.getElementById('btn-capture');
 const btnCloseCamera = document.getElementById('btn-close-camera');
 
 let currentStream = null;
-let facingMode = 'environment'; // belakang
+let facingMode = 'environment'; // kamera belakang
+let videoReady = false;
 
 // Upload 
 async function uploadFile(blob, type) {
@@ -50,12 +51,30 @@ async function startCamera(mode) {
   if (currentStream) {
     currentStream.getTracks().forEach(track => track.stop());
   }
+  videoReady = false;
+  statusEl.textContent = 'Membuka kamera...';
+
   try {
     currentStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: mode },
+      video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false
     });
+
     videoEl.srcObject = currentStream;
+    videoEl.setAttribute('playsinline', '');
+    videoEl.setAttribute('autoplay', '');
+
+    // Tunggu video siap
+    await new Promise((resolve, reject) => {
+      videoEl.onloadedmetadata = () => {
+        videoEl.play().then(resolve).catch(reject);
+      };
+      // Timeout 5 detik
+      setTimeout(() => reject(new Error('Video tidak merespons')), 5000);
+    });
+
+    videoReady = true;
+    statusEl.textContent = '';
   } catch (err) {
     statusEl.textContent = 'Gagal mengakses kamera: ' + err.message;
     hideCamera();
@@ -74,23 +93,33 @@ function hideCamera() {
     currentStream.getTracks().forEach(track => track.stop());
     currentStream = null;
   }
+  videoReady = false;
   cameraContainer.style.display = 'none';
   mainButtons.style.display = 'block';
 }
 
-// Tombol flip
+// Flip kamera depan/belakang
 btnFlip.addEventListener('click', () => {
   facingMode = facingMode === 'environment' ? 'user' : 'environment';
   startCamera(facingMode);
 });
 
-// Tombol capture
+// Capture foto
 btnCapture.addEventListener('click', () => {
-  if (!currentStream) return;
+  if (!videoReady || !currentStream) {
+    statusEl.textContent = 'Kamera belum siap.';
+    return;
+  }
+
   const canvas = document.createElement('canvas');
-  canvas.width = videoEl.videoWidth || 640;
-  canvas.height = videoEl.videoHeight || 480;
-  canvas.getContext('2d').drawImage(videoEl, 0, 0);
+  // Gunakan dimensi aktual video, fallback jika 0
+  const vw = videoEl.videoWidth || 640;
+  const vh = videoEl.videoHeight || 480;
+  canvas.width = vw;
+  canvas.height = vh;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(videoEl, 0, 0, vw, vh);
 
   canvas.toBlob(blob => {
     if (blob) {
@@ -102,13 +131,13 @@ btnCapture.addEventListener('click', () => {
   }, 'image/jpeg', 0.85);
 });
 
-// Tombol tutup kamera
+// Tutup kamera
 btnCloseCamera.addEventListener('click', hideCamera);
 
 // Tombol "Ambil Foto" di menu utama
 document.getElementById('btn-photo').addEventListener('click', showCamera);
 
-// Rekam Suara (tetap sederhana) 
+// Rekam Suara 
 let mediaRecorder;
 let audioChunks = [];
 
