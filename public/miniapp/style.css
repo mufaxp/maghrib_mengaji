@@ -1,0 +1,97 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+  padding: 0;
+  background: #f9f9f9;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  justify-content: center;
+}
+
+#main-buttons {
+  padding: 30px 20px;
+}
+
+button {
+  display: block;
+  width: 100%;
+  margin: 15px 0;
+  padding: 18px;
+  font-size: 18px;
+  border: none;
+  border-radius: 12px;
+  background: #34a853;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:active {
+  background: #2c8c44;
+}
+
+#status {
+  margin-top: 20px;
+  font-size: 16px;
+  color: #555;
+  padding: 0 20px;
+}
+
+#camera-container {
+  display: none;
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  background: black;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+
+video {
+  width: 100%;
+  height: calc(100vh - 100px);
+  object-fit: contain;
+  background: #000;
+}
+
+#camera-controls {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 15px 20px;
+  background: rgba(0,0,0,0.7);
+  width: 100%;
+  box-sizing: border-box;
+  position: absolute;
+  bottom: 0;
+}
+
+.cam-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 28px;
+  cursor: pointer;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+
+.cam-btn:active {
+  opacity: 0.6;
+}
+
+.cam-btn-capture {
+  font-size: 42px;
+  border: 3px solid white;
+  border-radius: 50%;
+  width: 70px;
+  height: 70px;
+}
