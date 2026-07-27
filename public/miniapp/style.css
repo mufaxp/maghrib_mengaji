@@ -73,10 +73,10 @@ video {
   background: transparent;
   border: none;
   color: white;
-  font-size: 36px;
+  font-size: 44px;
   cursor: pointer;
-  width: 60px;
-  height: 60px;
+  width: 70px;
+  height: 70px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -89,12 +89,13 @@ video {
 }
 
 .cam-btn-capture {
-  font-size: 48px;
+  font-size: 56px;
   border: 4px solid white;
   border-radius: 50%;
   background: transparent;
   color: white;
-  width: 70px;
-  height: 70px;
+  width: 80px;
+  height: 80px;
   line-height: 1;
+  padding: 0;
 }
