@@ -72,3 +72,30 @@ export async function processVoice(voice, className, studentName) {
   await saveFile(fileName, buffer);
   return fileName;
 }
+
+
+// Fungsi untuk memproses buffer langsung (dari Mini App)
+export async function processPhotoFromBuffer(buffer, className, studentName) {
+  const jpegBuffer = await sharp(buffer)
+    .resize({ width: 1080, height: 1080, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 75 })
+    .toBuffer();
+
+  const safeClassName = sanitizeString(className);
+  const safeStudentName = sanitizeString(studentName);
+  const timestamp = Date.now();
+  const fileName = `${safeClassName}_${safeStudentName}_${timestamp}.jpg`;
+
+  await saveFile(fileName, jpegBuffer);
+  return fileName;
+}
+
+export async function processVoiceFromBuffer(buffer, className, studentName) {
+  const safeClassName = sanitizeString(className);
+  const safeStudentName = sanitizeString(studentName);
+  const timestamp = Date.now();
+  const fileName = `${safeClassName}_${safeStudentName}_${timestamp}.ogg`;
+
+  await saveFile(fileName, buffer);
+  return fileName;
+}

@@ -1,4 +1,5 @@
 import path from 'path';
+import crypto from 'crypto';
 import axios from 'axios';
 import { TELEGRAM_API_BASE } from '../config/telegram.js';
 import {
@@ -6,6 +7,7 @@ import {
   levelSelectionMessage,
   classSelectionMessage,
   studentSelectionMessage,
+  uploadMiniAppButton,
 } from '../views/messageView.js';
 import { getClassesByLevel } from '../models/classModel.js';
 import {
@@ -22,7 +24,13 @@ import {
   deleteTodayReport,
   getTodayReportFilePath,
 } from '../models/reportModel.js';
-import { processPhoto, processVoice, deleteLocalFile } from '../helpers/mediaHelper.js';
+import {
+  processPhoto,
+  processVoice,
+  processPhotoFromBuffer,
+  processVoiceFromBuffer,
+  deleteLocalFile,
+} from '../helpers/mediaHelper.js';
 import { sendPhotoToTelegram } from '../helpers/photoSender.js';
 import { sendVoiceToTelegram } from '../helpers/voiceSender.js';
 import {
@@ -33,24 +41,27 @@ import {
 } from '../models/studentModel.js';
 
 // State 
-const userStates = new Map();
-const STATE_TTL = 60 * 60 * 1000; // 60 menit
+const userStates = new Map();   // chatId -> { step, data, timeoutId, token }
+const tokenMap = new Map();     // token -> chatId
+const STATE_TTL = 60 * 60 * 1000;           // 60 menit (default)
+const MEDIA_TTL = 10 * 60 * 1000;           // 10 menit untuk token Mini App
 
-function setUserState(chatId, data) {
+function setUserState(chatId, data, ttl = STATE_TTL) {
   clearUserState(chatId);
   const timeoutId = setTimeout(() => {
-    userStates.delete(chatId);
+    clearUserState(chatId);
     console.log(`State untuk chatId ${chatId} dihapus karena TTL.`);
-  }, STATE_TTL);
+  }, ttl);
   userStates.set(chatId, { ...data, timeoutId });
 }
 
 function clearUserState(chatId) {
   const state = userStates.get(chatId);
-  if (state && state.timeoutId) {
-    clearTimeout(state.timeoutId);
+  if (state) {
+    if (state.timeoutId) clearTimeout(state.timeoutId);
+    if (state.token) tokenMap.delete(state.token);
+    userStates.delete(chatId);
   }
-  userStates.delete(chatId);
 }
 
 // Utilitas 
@@ -80,7 +91,7 @@ function getUsernameFromUpdate(update) {
   return null;
 }
 
-// Background task 
+// Background task pengiriman laporan ke guru 
 async function sendReportsInBackground(chatId, reports) {
   for (const report of reports) {
     const fullPath = path.join('uploads', report.file_path);
@@ -101,14 +112,14 @@ async function sendReportsInBackground(chatId, reports) {
   await sendMessage(chatId, '✅ Semua data laporan telah dikirim.').catch(() => {});
 }
 
-// Proses Update 
+// Proses Update Webhook 
 async function processUpdate(update) {
   const username = getUsernameFromUpdate(update);
   const adminUsernames = process.env.ADMIN_USERNAMES
     ? process.env.ADMIN_USERNAMES.split(',').map(u => u.trim())
     : [];
 
-  // Pesan teks 
+  // --- Pesan teks ---
   if (update.message && update.message.text) {
     const message = update.message;
     const chatId = message.chat.id;
@@ -117,8 +128,10 @@ async function processUpdate(update) {
     if (text === '/start') {
       const { text: replyText, reply_markup } = welcomeMessage();
       await sendMessage(chatId, replyText, reply_markup);
+      return;
     }
-    else if (text === '/list') {
+
+    if (text === '/list') {
       if (!username) {
         await sendMessage(chatId, 'Akun Telegram Anda tidak memiliki username. Silakan set username terlebih dahulu agar dapat menggunakan fitur guru.');
         return;
@@ -152,8 +165,10 @@ async function processUpdate(update) {
       }
 
       await sendMessage(chatId, messageText);
+      return;
     }
-    else if (text === '/laporan') {
+
+    if (text === '/laporan') {
       if (!username) {
         await sendMessage(chatId, 'Akun Telegram Anda tidak memiliki username. Silakan set username terlebih dahulu agar dapat menggunakan fitur guru.');
         return;
@@ -170,8 +185,10 @@ async function processUpdate(update) {
         await sendMessage(chatId, `Mengirim ${reports.length} laporan Maghrib Mengaji kelas ${teacher.class_name} hari ini...`);
         sendReportsInBackground(chatId, reports);
       }
+      return;
     }
-    else if (text === '/tambah') {
+
+    if (text === '/tambah') {
       if (!username) {
         await sendMessage(chatId, 'Akun Telegram Anda tidak memiliki username. Silakan set username terlebih dahulu agar dapat menggunakan fitur guru.');
         return;
@@ -186,26 +203,29 @@ async function processUpdate(update) {
         class_id: teacher.class_id,
       });
       await sendMessage(chatId, `📝 Silakan kirim daftar nama siswa kelas ${teacher.class_name} yang ingin ditambahkan.\nTulis satu nama per baris.`);
+      return;
     }
-    else if (text === '/hapus') {
+
+    if (text === '/hapus') {
       const currentState = userStates.get(chatId);
       const lastData = currentState?.lastStudent;
       if (lastData) {
         const filePath = await getTodayReportFilePath(lastData.student_id);
-        if (filePath) {
-          await deleteLocalFile(filePath);
-        }
+        if (filePath) await deleteLocalFile(filePath);
         const deleted = await deleteTodayReport(lastData.student_id);
         if (deleted) {
+          // Hapus berhasil, langsung beri tombol Mini App baru
+          const token = crypto.randomUUID();
+          tokenMap.set(token, chatId);
+          const newStudentInfo = { ...lastData };
           setUserState(chatId, {
-            student_id: lastData.student_id,
-            class_id: lastData.class_id,
-            className: lastData.className,
-            studentName: lastData.studentName,
+            ...newStudentInfo,
             step: 'awaiting_media',
-            lastStudent: lastData,
-          });
-          await sendMessage(chatId, `Laporan hari ini untuk ${lastData.studentName} telah dihapus. Silakan kirimkan ulang laporannya!`);
+            lastStudent: newStudentInfo,
+            token: token,
+          }, MEDIA_TTL);
+          const { text: prompt, reply_markup } = uploadMiniAppButton(token);
+          await sendMessage(chatId, `Laporan sebelumnya dihapus.\n${prompt}`, reply_markup);
         } else {
           await sendMessage(chatId, `${lastData.studentName} belum memiliki laporan hari ini.`);
           clearUserState(chatId);
@@ -215,8 +235,10 @@ async function processUpdate(update) {
         await sendMessage(chatId, levelText, keyboard);
         setUserState(chatId, { step: 'deleting_report' });
       }
+      return;
     }
-    else if (text === '/gantiwalas') {
+
+    if (text === '/gantiwalas') {
       if (!username || !adminUsernames.includes(username)) {
         await sendMessage(chatId, '❌ Anda tidak memiliki akses admin.');
         return;
@@ -224,124 +246,121 @@ async function processUpdate(update) {
       const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
       await sendMessage(chatId, levelText, keyboard);
       setUserState(chatId, { step: 'ganti_walas_select_level' });
+      return;
     }
-    else if (text === '/pindahwalas') {
+
+    if (text === '/pindahwalas') {
       if (!username || !adminUsernames.includes(username)) {
         await sendMessage(chatId, '❌ Anda tidak memiliki akses admin.');
         return;
       }
       await sendMessage(chatId, 'Masukkan username guru yang akan dipindahkan (tanpa @).');
       setUserState(chatId, { step: 'pindah_walas_get_username' });
+      return;
     }
-    else {
-      const state = userStates.get(chatId);
-      if (!state) return;
 
-      if (state.step === 'awaiting_student_names') {
-        const classId = state.class_id;
-        const names = text.split('\n').map(n => n.trim()).filter(n => n.length > 0);
-        if (names.length === 0) {
-          await sendMessage(chatId, '⚠️ Tidak ada nama yang valid. Kirim ulang dengan satu nama per baris.');
-          return;
-        }
-        try {
-          await insertStudents(classId, names);
-          await sendMessage(chatId, `✅ Berhasil menambahkan ${names.length} siswa ke dalam kelas.`);
-        } catch (error) {
-          console.error('Error menambahkan siswa:', error);
-          await sendMessage(chatId, '❌ Gagal menambahkan siswa. Pastikan format benar dan tidak ada duplikasi.');
-        }
-        clearUserState(chatId);
+    // State machine untuk input setelah perintah 
+    const state = userStates.get(chatId);
+    if (!state) return; // abaikan pesan tanpa state
+
+    if (state.step === 'awaiting_student_names') {
+      const classId = state.class_id;
+      const names = text.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+      if (names.length === 0) {
+        await sendMessage(chatId, '⚠️ Tidak ada nama yang valid. Kirim ulang dengan satu nama per baris.');
+        return;
       }
-      else if (state.step === 'awaiting_new_teacher_name') {
-        const name = text.trim();
-        if (!name) {
-          await sendMessage(chatId, 'Nama tidak valid. Silakan ketik nama guru pengganti.');
-          return;
-        }
-        setUserState(chatId, { ...state, step: 'awaiting_new_teacher_gender', newTeacherName: name });
-        await sendMessage(chatId, 'Tulis jenis kelaminnya (L/P)');
+      try {
+        await insertStudents(classId, names);
+        await sendMessage(chatId, `✅ Berhasil menambahkan ${names.length} siswa ke dalam kelas.`);
+      } catch (error) {
+        console.error('Error menambahkan siswa:', error);
+        await sendMessage(chatId, '❌ Gagal menambahkan siswa. Pastikan format benar dan tidak ada duplikasi.');
       }
-      else if (state.step === 'awaiting_new_teacher_gender') {
-        const genderInput = text.trim().toUpperCase();
-        if (genderInput !== 'L' && genderInput !== 'P') {
-          await sendMessage(chatId, 'Jenis kelamin tidak valid. Ketik L (Laki-laki) atau P (Perempuan).');
-          return;
-        }
-        const gender = genderInput === 'L' ? 1 : 0;
-        setUserState(chatId, { ...state, step: 'awaiting_new_teacher_username', newTeacherGender: gender });
-        await sendMessage(chatId, 'Tulis username Telegram guru tersebut (tanpa @).');
-      }
-      else if (state.step === 'awaiting_new_teacher_username') {
-        const newUsername = text.trim().replace('@', '');
-        if (!newUsername) {
-          await sendMessage(chatId, 'Username tidak valid. Silakan ketik username Telegram guru tanpa @.');
-          return;
-        }
-        try {
-          await updateTeacherByClassId(state.class_id, state.newTeacherName, state.newTeacherGender, newUsername);
-          const className = await getClassNameById(state.class_id);
-          const panggilan = state.newTeacherGender === 0 ? 'Bu' : 'Pak';
-          await sendMessage(chatId, `✅ Wali kelas ${className} berhasil diperbarui menjadi ${panggilan} ${state.newTeacherName} (@${newUsername}).`);
-        } catch (error) {
-          console.error('Error update teacher:', error);
-          await sendMessage(chatId, '❌ Gagal memperbarui wali kelas. Pastikan username valid dan belum terdaftar untuk guru lain.');
-        }
-        clearUserState(chatId);
-      }
-      else if (state.step === 'pindah_walas_get_username') {
-        const targetUsername = text.trim().replace('@', '');
-        const guru = await getTeacherByUsername(targetUsername);
-        if (!guru) {
-          await sendMessage(chatId, '❌ Guru dengan username tersebut tidak ditemukan.');
-          clearUserState(chatId);
-          return;
-        }
-        setUserState(chatId, {
-          step: 'pindah_walas_select_level',
-          movedUsername: targetUsername,
-          movedFullName: guru.full_name,
-          movedGender: guru.gender,
-        });
-        const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
-        await sendMessage(chatId, levelText, keyboard);
-      }
+      clearUserState(chatId);
+      return;
     }
+
+    if (state.step === 'awaiting_new_teacher_name') {
+      const name = text.trim();
+      if (!name) {
+        await sendMessage(chatId, 'Nama tidak valid. Silakan ketik nama guru pengganti.');
+        return;
+      }
+      setUserState(chatId, { ...state, step: 'awaiting_new_teacher_gender', newTeacherName: name });
+      await sendMessage(chatId, 'Tulis jenis kelaminnya (L/P)');
+      return;
+    }
+
+    if (state.step === 'awaiting_new_teacher_gender') {
+      const genderInput = text.trim().toUpperCase();
+      if (genderInput !== 'L' && genderInput !== 'P') {
+        await sendMessage(chatId, 'Jenis kelamin tidak valid. Ketik L (Laki-laki) atau P (Perempuan).');
+        return;
+      }
+      const gender = genderInput === 'L' ? 1 : 0;
+      setUserState(chatId, { ...state, step: 'awaiting_new_teacher_username', newTeacherGender: gender });
+      await sendMessage(chatId, 'Tulis username Telegram guru tersebut (tanpa @).');
+      return;
+    }
+
+    if (state.step === 'awaiting_new_teacher_username') {
+      const newUsername = text.trim().replace('@', '');
+      if (!newUsername) {
+        await sendMessage(chatId, 'Username tidak valid. Silakan ketik username Telegram guru tanpa @.');
+        return;
+      }
+      try {
+        await updateTeacherByClassId(state.class_id, state.newTeacherName, state.newTeacherGender, newUsername);
+        const className = await getClassNameById(state.class_id);
+        const panggilan = state.newTeacherGender === 0 ? 'Bu' : 'Pak';
+        await sendMessage(chatId, `✅ Wali kelas ${className} berhasil diperbarui menjadi ${panggilan} ${state.newTeacherName} (@${newUsername}).`);
+      } catch (error) {
+        console.error('Error update teacher:', error);
+        await sendMessage(chatId, '❌ Gagal memperbarui wali kelas. Pastikan username valid dan belum terdaftar untuk guru lain.');
+      }
+      clearUserState(chatId);
+      return;
+    }
+
+    if (state.step === 'pindah_walas_get_username') {
+      const targetUsername = text.trim().replace('@', '');
+      const guru = await getTeacherByUsername(targetUsername);
+      if (!guru) {
+        await sendMessage(chatId, '❌ Guru dengan username tersebut tidak ditemukan.');
+        clearUserState(chatId);
+        return;
+      }
+      setUserState(chatId, {
+        step: 'pindah_walas_select_level',
+        movedUsername: targetUsername,
+        movedFullName: guru.full_name,
+        movedGender: guru.gender,
+      });
+      const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
+      await sendMessage(chatId, levelText, keyboard);
+      return;
+    }
+
+    // State tidak dikenali
+    return;
   }
 
-  // Media masuk 
+  // Media masuk (foto/voice dari galeri) → Tolak dengan pengingat 
   if (update.message && (update.message.photo || update.message.voice)) {
     const message = update.message;
     const chatId = message.chat.id;
     const state = userStates.get(chatId);
     if (state && state.step === 'awaiting_media') {
-      const { student_id, className, studentName } = state;
-      const alreadyReported = await hasReportedToday(student_id);
-      if (alreadyReported) {
-        await sendMessage(chatId, `⚠️ Anda sudah mengirim laporan hari ini. Jika ingin mengganti, kirim /hapus terlebih dahulu.`);
-        clearUserState(chatId);
-        return;
-      }
-      try {
-        let fileName;
-        if (message.photo) {
-          fileName = await processPhoto(message.photo, className, studentName);
-        } else if (message.voice) {
-          fileName = await processVoice(message.voice, className, studentName);
-        }
-        await createReport(student_id, fileName);
-        await sendMessage(chatId, `✅ Laporan berhasil dikirim. Terima kasih, ${studentName}.`);
-      } catch (error) {
-        console.error('Error processing media:', error);
-        await sendMessage(chatId, 'Maaf, terjadi kesalahan saat memproses file. Silakan coba lagi.');
-      }
-      clearUserState(chatId);
+      // Ingatkan untuk pakai Mini App, jangan hapus state agar token tetap berlaku
+      await sendMessage(chatId, '⚠️ Silakan gunakan tombol "Unggah Laporan" untuk mengirim laporan. Kiriman dari galeri tidak diterima.');
     } else {
-      await sendMessage(chatId, 'Silakan pilih menu Laporan Maghrib Mengaji terlebih dahulu untuk mengirim laporan.');
+      await sendMessage(chatId, 'Silakan pilih menu Laporan Maghrib Mengaji terlebih dahulu.');
     }
+    return;
   }
 
-  // Callback query 
+  // Callback query (inline keyboard) 
   if (update.callback_query) {
     const callbackQuery = update.callback_query;
     const chatId = callbackQuery.message.chat.id;
@@ -354,15 +373,22 @@ async function processUpdate(update) {
     if (data === 'menu:siswa') {
       const { text: levelText, reply_markup: keyboard } = levelSelectionMessage();
       await sendMessage(chatId, levelText, keyboard);
-    } else if (data === 'menu:guru') {
+      return;
+    }
+
+    if (data === 'menu:guru') {
       await sendMessage(chatId,
         'Anda masuk sebagai Guru. Berikut perintah yang tersedia:\n\n' +
         '/laporan - Melihat foto & voice note laporan siswa hari ini\n' +
         '/list - Daftar siswa yang sudah & belum melapor\n' +
         '/tambah - Menambahkan siswa ke kelas Anda'
       );
-    } else if (data.startsWith('level:')) {
+      return;
+    }
+
+    if (data.startsWith('level:')) {
       const level = data.split(':')[1];
+      // Mode pindah walas
       if (state && state.step === 'pindah_walas_select_level') {
         const classes = await getClassesByLevel(level);
         if (classes.length === 0) {
@@ -374,6 +400,7 @@ async function processUpdate(update) {
         }
         return;
       }
+      // Mode ganti walas
       if (state && state.step === 'ganti_walas_select_level') {
         const classes = await getClassesByLevel(level);
         if (classes.length === 0) {
@@ -385,6 +412,7 @@ async function processUpdate(update) {
         }
         return;
       }
+      // Mode biasa (siswa)
       const classes = await getClassesByLevel(level);
       if (classes.length === 0) {
         await sendMessage(chatId, 'Tidak ada kelas tersedia untuk jenjang ini.');
@@ -392,8 +420,12 @@ async function processUpdate(update) {
         const { text: classText, reply_markup: keyboard } = classSelectionMessage(classes);
         await sendMessage(chatId, classText, keyboard);
       }
-    } else if (data.startsWith('class:')) {
+      return;
+    }
+
+    if (data.startsWith('class:')) {
       const classId = parseInt(data.split(':')[1], 10);
+      // Mode pindah walas
       if (state && state.step === 'pindah_walas_select_class') {
         try {
           const result = await moveTeacher(state.movedUsername, classId);
@@ -413,6 +445,7 @@ async function processUpdate(update) {
         clearUserState(chatId);
         return;
       }
+      // Mode ganti walas
       if (state && state.step === 'ganti_walas_select_class') {
         const teacher = await getTeacherByClassId(classId);
         const className = await getClassNameById(classId);
@@ -425,6 +458,7 @@ async function processUpdate(update) {
         setUserState(chatId, { step: 'awaiting_new_teacher_name', class_id: classId });
         return;
       }
+      // Mode biasa (siswa)
       const students = await getStudentsByClassId(classId);
       if (students.length === 0) {
         await sendMessage(chatId, 'Belum ada siswa terdaftar di kelas ini.');
@@ -432,7 +466,10 @@ async function processUpdate(update) {
         const { text: studentText, reply_markup: keyboard } = studentSelectionMessage(students);
         await sendMessage(chatId, studentText, keyboard);
       }
-    } else if (data.startsWith('student:')) {
+      return;
+    }
+
+    if (data.startsWith('student:')) {
       const studentId = parseInt(data.split(':')[1], 10);
       const student = await getStudentById(studentId);
       if (!student) {
@@ -441,13 +478,15 @@ async function processUpdate(update) {
       }
       const className = await getClassNameById(student.class_id);
 
+      // Mode menghapus laporan (dari /hapus yang memilih jenjang -> kelas -> nama)
       if (state && state.step === 'deleting_report') {
         const filePath = await getTodayReportFilePath(studentId);
-        if (filePath) {
-          await deleteLocalFile(filePath);
-        }
+        if (filePath) await deleteLocalFile(filePath);
         const deleted = await deleteTodayReport(studentId);
         if (deleted) {
+          // Langsung beri tombol Mini App
+          const token = crypto.randomUUID();
+          tokenMap.set(token, chatId);
           const lastStudentInfo = {
             student_id: student.id,
             class_id: student.class_id,
@@ -455,40 +494,89 @@ async function processUpdate(update) {
             studentName: student.full_name,
           };
           setUserState(chatId, {
-            student_id: student.id,
-            class_id: student.class_id,
-            className: className,
-            studentName: student.full_name,
+            ...lastStudentInfo,
             step: 'awaiting_media',
             lastStudent: lastStudentInfo,
-          });
-          await sendMessage(chatId, `Laporan hari ini untuk ${student.full_name} telah dihapus. Silakan kirimkan ulang laporannya!`);
+            token: token,
+          }, MEDIA_TTL);
+          const { text: prompt, reply_markup } = uploadMiniAppButton(token);
+          await sendMessage(chatId, `Laporan sebelumnya dihapus.\n${prompt}`, reply_markup);
         } else {
           await sendMessage(chatId, `${student.full_name} belum memiliki laporan hari ini.`);
           clearUserState(chatId);
         }
-      } else {
-        const lastStudentInfo = {
-          student_id: student.id,
-          class_id: student.class_id,
-          className: className,
-          studentName: student.full_name,
-        };
-        setUserState(chatId, {
-          student_id: student.id,
-          class_id: student.class_id,
-          className: className,
-          studentName: student.full_name,
-          step: 'awaiting_media',
-          lastStudent: lastStudentInfo,
-        });
-        await sendMessage(chatId, `Silakan kirim foto atau voice note kegiatan Maghrib Mengaji Anda, ${student.full_name}.`);
+        return;
       }
+
+      const token = crypto.randomUUID();
+      tokenMap.set(token, chatId);
+      const lastStudentInfo = {
+        student_id: student.id,
+        class_id: student.class_id,
+        className: className,
+        studentName: student.full_name,
+      };
+      setUserState(chatId, {
+        ...lastStudentInfo,
+        step: 'awaiting_media',
+        lastStudent: lastStudentInfo,
+        token: token,
+      }, MEDIA_TTL);
+
+      const { text: prompt, reply_markup } = uploadMiniAppButton(token);
+      await sendMessage(chatId, prompt, reply_markup);
+      return;
     }
   }
 }
 
-// Handler Webhook 
+// Handler Upload dari Mini App 
+export async function uploadMiniAppHandler(req, res) {
+  try {
+    const { token, type } = req.body;
+    if (!token || !req.file) {
+      return res.status(400).json({ error: 'Data tidak lengkap.' });
+    }
+
+    const chatId = tokenMap.get(token);
+    if (!chatId) {
+      return res.status(403).json({ error: 'Token tidak valid atau sudah kadaluarsa.' });
+    }
+
+    const state = userStates.get(chatId);
+    if (!state || state.step !== 'awaiting_media') {
+      return res.status(400).json({ error: 'Status tidak valid. Silakan ulangi dari menu.' });
+    }
+
+    const { student_id, className, studentName } = state;
+    const alreadyReported = await hasReportedToday(student_id);
+    if (alreadyReported) {
+      clearUserState(chatId);
+      return res.status(400).json({ error: 'Anda sudah mengirim laporan hari ini. Gunakan /hapus untuk mengirim ulang.' });
+    }
+
+    let fileName;
+    const buffer = req.file.buffer;
+    if (type === 'photo') {
+      fileName = await processPhotoFromBuffer(buffer, className, studentName);
+    } else if (type === 'voice') {
+      fileName = await processVoiceFromBuffer(buffer, className, studentName);
+    } else {
+      return res.status(400).json({ error: 'Tipe media tidak didukung.' });
+    }
+
+    await createReport(student_id, fileName);
+    await sendMessage(chatId, `✅ Laporan berhasil dikirim. Terima kasih, ${studentName}.`);
+    clearUserState(chatId);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error upload mini app:', error);
+    return res.status(500).json({ error: 'Gagal memproses file.' });
+  }
+}
+
+// Handler Webhook Utama 
 export async function handleWebhook(req, res) {
   res.sendStatus(200);
   const update = req.body;

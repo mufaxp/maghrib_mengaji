@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { handleWebhook } from '../controllers/webhookController.js';
+import { handleWebhook, uploadMiniAppHandler } from '../controllers/webhookController.js';
 
 const router = Router();
 
 router.post('/telehook', handleWebhook);
+router.post('/api/upload-miniapp', uploadMiniAppHandler);
 
 export default router;

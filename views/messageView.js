@@ -55,3 +55,20 @@ export function startButtonKeyboard() {
   ], 1);
   return { reply_markup: keyboard };
 }
+
+/**
+ * Tombol Mini App untuk unggah laporan.
+ * @param {string} token - token unik untuk identifikasi user
+ */
+export function uploadMiniAppButton(token) {
+  const text = 'Silakan klik tombol unggah laporan untuk mengirim laporan';
+  const keyboard = {
+    inline_keyboard: [
+      [{
+        text: 'Unggah Laporan',
+        web_app: { url: `https://lab.mugalearning.web.id/miniapp/?token=${token}` }
+      }]
+    ]
+  };
+  return { text, reply_markup: keyboard };
+}
