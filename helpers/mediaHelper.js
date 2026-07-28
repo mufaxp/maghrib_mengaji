@@ -95,7 +95,8 @@ export async function processVoiceFromBuffer(buffer, className, studentName) {
   const safeClassName = sanitizeString(className);
   const safeStudentName = sanitizeString(studentName);
   const timestamp = Date.now();
-  const fileName = `${safeClassName}_${safeStudentName}_${timestamp}.ogg`;
+  const ext = '.webm';
+  const fileName = `${safeClassName}_${safeStudentName}_${timestamp}${ext}`;
 
   await saveFile(fileName, buffer);
   return fileName;
