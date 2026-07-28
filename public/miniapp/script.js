@@ -160,7 +160,11 @@ document.getElementById('btn-voice').addEventListener('click', async () => {
     const mimeType = MediaRecorder.isTypeSupported('audio/ogg')
                      ? 'audio/ogg'
                      : 'audio/webm;codecs=opus';
-    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    const options = { mimeType };
+    if (mimeType.includes('opus') || mimeType.includes('ogg')) {
+      options.audioBitsPerSecond = 32000; // 32 kbps
+    }
+    mediaRecorder = new MediaRecorder(stream, options);
     audioChunks = [];
 
     // Bersihkan timer sebelumnya jika ada
