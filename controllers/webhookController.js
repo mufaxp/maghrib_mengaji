@@ -44,7 +44,7 @@ import {
 const userStates = new Map();   // chatId -> { step, data, timeoutId, token }
 const tokenMap = new Map();     // token -> chatId
 const STATE_TTL = 60 * 60 * 1000;           // 60 menit (default)
-const MEDIA_TTL = 10 * 60 * 1000;           // 10 menit untuk token Mini App
+const MEDIA_TTL = 20 * 60 * 1000;           // 20 menit untuk token Mini App
 
 function setUserState(chatId, data, ttl = STATE_TTL) {
   clearUserState(chatId);
@@ -484,6 +484,10 @@ async function processUpdate(update) {
         if (filePath) await deleteLocalFile(filePath);
         const deleted = await deleteTodayReport(studentId);
         if (deleted) {
+          // Hapus token lama jika ada
+          if (state && state.token) {
+            tokenMap.delete(state.token);
+          }
           // Langsung beri tombol Mini App
           const token = crypto.randomUUID();
           tokenMap.set(token, chatId);
@@ -508,6 +512,9 @@ async function processUpdate(update) {
         return;
       }
 
+      if (state && state.token) {
+        tokenMap.delete(state.token);
+      }
       const token = crypto.randomUUID();
       tokenMap.set(token, chatId);
       const lastStudentInfo = {

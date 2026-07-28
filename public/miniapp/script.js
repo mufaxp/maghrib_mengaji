@@ -149,12 +149,12 @@ document.getElementById('btn-voice').addEventListener('click', async () => {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
     audioChunks = [];
 
     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
     mediaRecorder.onstop = () => {
-      const blob = new Blob(audioChunks, { type: 'audio/ogg' });
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
       uploadFile(blob, 'voice');
     };
 
