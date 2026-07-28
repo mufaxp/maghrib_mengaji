@@ -141,34 +141,58 @@ btnCloseCamera.addEventListener('click', hideCamera);
 // Tombol "Ambil Foto" di menu utama
 document.getElementById('btn-photo').addEventListener('click', showCamera);
 
-// Rekam Suara 
+// Rekam Suara
 let mediaRecorder;
 let audioChunks = [];
+let recordingTimer = null;
+const MAX_RECORD_TIME = 120; // 120 detik (2 menit)
 
 document.getElementById('btn-voice').addEventListener('click', async () => {
+  // Jika sedang merekam, hentikan dan reset timer
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop();
+    if (recordingTimer) clearInterval(recordingTimer);
     return;
   }
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Prioritaskan format OGG (didukung Telegram & WebView terbaru)
-    const mimeType = MediaRecorder.isTypeSupported('audio/ogg') 
-                     ? 'audio/ogg' 
+    const mimeType = MediaRecorder.isTypeSupported('audio/ogg')
+                     ? 'audio/ogg'
                      : 'audio/webm;codecs=opus';
     mediaRecorder = new MediaRecorder(stream, { mimeType });
     audioChunks = [];
 
+    // Bersihkan timer sebelumnya jika ada
+    if (recordingTimer) clearInterval(recordingTimer);
+
     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
     mediaRecorder.onstop = () => {
+      // Gabungkan potongan audio dan kirim
       const blob = new Blob(audioChunks, { type: mimeType });
       uploadFile(blob, 'voice');
     };
 
+    // Mulai rekaman
     mediaRecorder.start();
-    statusEl.textContent = '🎙️ Merekam...';
+    let seconds = 0;
+    statusEl.textContent = '🎙️ Merekam... 0:00';
     document.getElementById('btn-voice').textContent = '⏹️ Berhenti Rekam';
+
+    // Timer tampilan & penghenti otomatis
+    recordingTimer = setInterval(() => {
+      seconds++;
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      statusEl.textContent = `🎙️ Merekam... ${mins}:${secs.toString().padStart(2, '0')}`;
+
+      // Setelah 2 menit, otomatis berhenti dan kirim
+      if (seconds >= MAX_RECORD_TIME) {
+        mediaRecorder.stop();
+        clearInterval(recordingTimer);
+        statusEl.textContent = '⏳ Mengunggah...';
+      }
+    }, 1000);
   } catch (err) {
     statusEl.textContent = 'Izin mikrofon ditolak: ' + err.message;
   }
