@@ -2,6 +2,10 @@ const tg = window.Telegram.WebApp;
 tg.ready();
 tg.enableClosingConfirmation();
 
+if (tg.enableWakeLock) {
+  tg.enableWakeLock();
+}
+
 const statusEl = document.getElementById('status');
 const token = new URLSearchParams(window.location.search).get('token');
 
