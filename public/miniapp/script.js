@@ -149,12 +149,16 @@ document.getElementById('btn-voice').addEventListener('click', async () => {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    // Prioritaskan format OGG (didukung Telegram & WebView terbaru)
+    const mimeType = MediaRecorder.isTypeSupported('audio/ogg') 
+                     ? 'audio/ogg' 
+                     : 'audio/webm;codecs=opus';
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
     audioChunks = [];
 
     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
     mediaRecorder.onstop = () => {
-      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      const blob = new Blob(audioChunks, { type: mimeType });
       uploadFile(blob, 'voice');
     };
 

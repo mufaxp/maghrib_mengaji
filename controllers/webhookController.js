@@ -99,7 +99,7 @@ async function sendReportsInBackground(chatId, reports) {
     try {
       if (['.jpg', '.jpeg', '.png'].includes(ext)) {
         await sendPhotoToTelegram(chatId, fullPath, `${report.full_name}`);
-      } else if (['.ogg', '.oga', '.mp3', '.wav'].includes(ext)) {
+      } else if (['.ogg', '.oga', '.mp3', '.wav', '.webm'].includes(ext)) {
         await sendVoiceToTelegram(chatId, fullPath, `${report.full_name}`);
       } else {
         await sendMessage(chatId, `⚠️ Format file tidak didukung untuk ${report.full_name}.`).catch(() => {});
